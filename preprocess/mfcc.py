@@ -7,7 +7,7 @@ import csv
 import tqdm
 
 def extract_mfcc(y, sr,
-                 n_mfcc=13,
+                 n_mfcc=20,
                  n_fft=400,
                  hop_length=160):
     mfcc = librosa.feature.mfcc(
@@ -78,7 +78,7 @@ def main():
     parser.add_argument("-i", "--input", required=True, help="Input root directory containing WAV files")
     parser.add_argument("-o", "--output", required=True, help="Output directory for features and manifest")
     args = parser.parse_args()
-    
+
     process_folder(args.input, args.output)
 
 if __name__ == '__main__':
