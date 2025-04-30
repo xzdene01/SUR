@@ -58,19 +58,16 @@ def adapt_gmms(ubm, spk_feats, relevance, do_weights=False, do_means=False, do_c
         if ubm.covariance_type == "diag":
             gmm.precisions_cholesky_ = 1.0 / np.sqrt(gmm.covariances_)
         else:
-            gmm.precisions_cholesky_ = np.linalg.cholesky(
-                np.linalg.inv(gmm.covariances_)
-            )
+            gmm.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(gmm.covariances_))
         gmms[label] = gmm
     return gmms
 
-def train(train_manifest, dev_manifest, output_dir,
-          n_components, covariance_type,
-          max_iter, relevance,
-          minmax_norm, seed, weights, means, covar):
+def train(train_manifest, dev_manifest, output_dir, n_components, covariance_type, max_iter, relevance, minmax_norm,
+          seed, weights, means, covar):
     if seed == 0:
         seed = int(time.time())
-    random.seed(seed); np.random.seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
 
     # Fit on training data
     data = load_manifest(train_manifest)
@@ -113,11 +110,11 @@ if __name__ == "__main__":
                    choices=["diag","tied","full","spherical"], default="diag")
     parser.add_argument("--max-iter",       type=int,   default=300)
     parser.add_argument("--relevance",      type=float, default=16.0)
+    parser.add_argument("--minmax-norm",    action="store_true")
+    parser.add_argument("--seed",           type=int,   default=42, help="Set seed for reproducibility (0 for random)")
     parser.add_argument("-w", "--weights",  action="store_true")
     parser.add_argument("-m", "--means",    action="store_true")
     parser.add_argument("-c", "--covar",    action="store_true")
-    parser.add_argument("--minmax-norm",    action="store_true")
-    parser.add_argument("--seed",           type=int,   default=42)
     args = parser.parse_args()
 
     train(

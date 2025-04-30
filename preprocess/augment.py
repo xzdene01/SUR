@@ -88,7 +88,7 @@ def augment_file(filepath, out_dir, clip: float = None):
     wav, sr = load_audio(filepath)
     base = os.path.splitext(os.path.basename(filepath))[0]
 
-    # 0. Cut first 2 seconds (almost every time the is few secs of silence)
+    # 0. Cut first 2 seconds (almost every time there is few secs of silence)
     cutoff = int(2 * sr)
     if len(wav) > cutoff:
         wav = wav[cutoff:]

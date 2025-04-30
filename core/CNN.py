@@ -19,9 +19,6 @@ class FeatureDataset(Dataset):
         # convert 1..31 to 0..30
         self.entries = [(feat_path, int(label) - 1) for feat_path, label in raw_entries]
 
-        # keep only entries with labels 0 and 1
-        # self.entries = [(feat_path, label) for feat_path, label in self.entries if label in [0, 1]]
-
     def __len__(self):
         return len(self.entries)
 
@@ -34,34 +31,37 @@ class FeatureDataset(Dataset):
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super().__init__()
-        # First conv layer with BN and activation
         self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.relu = nn.ReLU()
-        # Second conv layer with BN
+
         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm1d(out_channels)
-        # Shortcut connection: conv+bn if shape or channels change
+
+        # Shortcut connection
         if stride != 1 or in_channels != out_channels:
             self.match = nn.Sequential(
                 nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0),
-                # nn.BatchNorm1d(out_channels)
+                nn.BatchNorm1d(out_channels)
             )
         else:
             self.match = nn.Identity()
-        # Pooling layer
+
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
 
     def forward(self, x):
         identity = x
+
         # Main path
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
         out = self.conv2(out)
         out = self.bn2(out)
+
         # Shortcut
         identity = self.match(identity)
+
         # Combine
         out = out + identity
         out = self.relu(out)
@@ -71,20 +71,21 @@ class ResidualBlock(nn.Module):
 class SpeakerResNet(nn.Module):
     def __init__(self, input_length, num_classes):
         super().__init__()
-        # input channel = 1
+        # Input channel = 1
         self.layer1 = ResidualBlock(1, 16)
         self.layer2 = ResidualBlock(16, 32)
         self.layer3 = ResidualBlock(32, 32)
         self.layer4 = ResidualBlock(32, 64)
-        # average pooling over time
+
         self.avgpool = nn.AvgPool1d(kernel_size=3, stride=3)
-        # compute flattened size
+
+        # Compute flattened size
         with torch.no_grad():
             dummy = torch.zeros(1,1,input_length)
             out = self.layer4(self.layer3(self.layer2(self.layer1(dummy))))
             out = self.avgpool(out)
             flat_dim = out.numel()
-        # classification layers
+
         self.fc1 = nn.Sequential(
             nn.Flatten(),
             nn.Linear(flat_dim, 32),
@@ -183,7 +184,7 @@ def main(args):
     print(f"Best dev acc: {best_acc:.4f}")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Train 1D-CNN SID in PyTorch")
+    parser = argparse.ArgumentParser(description="1D-CNN SID")
     parser.add_argument('--train-manifest', required=True)
     parser.add_argument('--dev-manifest', required=True)
     parser.add_argument('--batch-size', type=int, default=8)

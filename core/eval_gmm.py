@@ -1,20 +1,22 @@
-import os
-import json
-import time
+import os, json, time, argparse
 import pickle
-import argparse
 import numpy as np
-from tqdm import tqdm
 import pandas as pd
+from tqdm import tqdm
+
 import matplotlib.pyplot as plt
+from scipy.special import logsumexp
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve
 
 from utils import load_manifest
+
+results = pd.DataFrame()
 
 def load_models(model_dir):
     # Load UBM
     ubm_path = os.path.join(model_dir, "ubm.pkl")
     ubm = pickle.load(open(ubm_path, "rb"))
+
     # Load GMMs
     gmms = {}
     for fname in sorted(os.listdir(model_dir)):
@@ -24,14 +26,13 @@ def load_models(model_dir):
     return ubm, gmms
 
 def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
+    global results
     y_true, y_pred = [], []
     trial_scores, trial_labels = [], []
-    results = pd.DataFrame()
 
     for feat_path, true_label in tqdm(data_list, desc="Scoring test data"):
         X = np.load(feat_path)
 
-        # log-likelihood differences
         scores = {lbl: g.score(X) - ubm.score(X) for lbl, g in gmms.items()}
         if do_minmax:
             vals = np.array(list(scores.values())); vmin, vmax = vals.min(), vals.max()
@@ -39,14 +40,18 @@ def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
         pred = max(scores, key=scores.get)
 
         if create_csv:
-            row = [feat_path, pred] + list(scores.values())
-            results = pd.concat([results, pd.DataFrame([row], columns=["file", "pred"] + list(scores.keys()))], ignore_index=True)
+            score_list = [scores[str(lbl)] for lbl in range(1, 32)]
+            Z = logsumexp(np.array(score_list))
+            log_probabs = score_list - Z
+            row = [feat_path, pred] + log_probabs.tolist()
+            results = pd.concat([results, pd.DataFrame([row], columns=["file", "pred"] + [i for i in range(1, 32)])], ignore_index=True)
 
-
-        y_true.append(str(true_label)); y_pred.append(str(pred))
+        y_true.append(str(true_label))
+        y_pred.append(str(pred))
         for lbl, sc in scores.items():
             trial_scores.append(sc)
             trial_labels.append(1 if str(lbl) == str(true_label) else 0)
+
     report = classification_report(y_true, y_pred, output_dict=True)
     labels = list(gmms.keys())
     cm = confusion_matrix(y_true, y_pred, labels=labels)
@@ -54,43 +59,64 @@ def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
     eer = fpr[np.nanargmin(np.abs((1 - tpr) - fpr))]
     return report, cm, eer, (fpr, tpr)
 
-
 def save_results(report, cm, eer, roc, output_dir):
     os.makedirs(output_dir, exist_ok=True)
+
     # metrics JSON
-    metrics = {"accuracy": report.get("accuracy"), "EER": eer, "classification_report": report}
+    metrics = {
+        "accuracy": report.get("accuracy"),
+        "EER": eer,
+        "classification_report": report
+    }
     with open(os.path.join(output_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2)
+
     # confusion matrix
-    fig, ax = plt.subplots(); cax = ax.matshow(cm, cmap="Blues"); fig.colorbar(cax)
-    ax.set_xlabel("Predicted"); ax.set_ylabel("True")
+    fig, ax = plt.subplots()
+    cax = ax.matshow(cm, cmap="Blues")
+    fig.colorbar(cax)
+
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
     plt.savefig(os.path.join(output_dir, "confusion_matrix.png")); plt.close(fig)
+
     # ROC curve
     fpr, tpr = roc
-    fig, ax = plt.subplots(); ax.plot(fpr, tpr, label=f"EER={eer:.3f}");
-    ax.plot([0,1], [0,1], "--", color="gray"); ax.set_xlabel("False Positive Rate"); ax.set_ylabel("True Positive Rate"); ax.legend()
-    plt.savefig(os.path.join(output_dir, "roc_curve.png")); plt.close(fig)
+    fig, ax = plt.subplots()
+    ax.plot(fpr, tpr, label=f"EER={eer:.3f}")
+    ax.plot([0,1], [0,1], "--", color="gray")
 
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.legend()
+
+    plt.savefig(os.path.join(output_dir, "roc_curve.png"))
 
 def run_evaluation(model_dir, test_manifest, output_root, do_minmax=False, create_csv=False):
+    global results
     ubm, gmms = load_models(model_dir)
     data = load_manifest(test_manifest)
 
     report, cm, eer, roc = evaluate_metrics(data, gmms, ubm, do_minmax, create_csv)
+
     ts = time.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(output_root, ts)
     save_results(report, cm, eer, roc, out_dir)
     print(f"Results saved in {out_dir}: Acc={report['accuracy']:.3f}, EER={eer:.3f}")
-    return report, cm, eer, roc
 
+    if create_csv:
+        results.to_csv(os.path.join("audio_gmm_ubm.csv"), index=False, sep=" ", header=False)
+        print(f"Results saved in audio_gmm_ubm.csv")
+
+    return report, cm, eer, roc
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate GMM model on SID test set")
-    parser.add_argument("--model-dir",     required=True)
-    parser.add_argument("--test-manifest", required=True)
-    parser.add_argument("--output-dir",    required=True)
-    parser.add_argument("--minmax-norm",   action="store_true")
-    parser.add_argument("--create_csv", action="store_true", help="Create CSV file with results")
+    parser.add_argument("--model-dir",      required=True)
+    parser.add_argument("--test-manifest",  required=True)
+    parser.add_argument("--output-dir",     required=True)
+    parser.add_argument("--minmax-norm",    action="store_true")
+    parser.add_argument("--create-csv",     action="store_true")
     args = parser.parse_args()
 
     run_evaluation(

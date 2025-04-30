@@ -122,7 +122,7 @@ def process_folder(input_dir, output_dir, n_mfcc=None, n_fbanks=None, n_fft=None
                 writer.writerow(row)
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract MFCC features + CMVN")
+    parser = argparse.ArgumentParser(description="Feature extraction for speech data")
     parser.add_argument("-i", "--input", required=True, help="Input root directory containing WAV files")
     parser.add_argument("-o", "--output", required=True, help="Output directory for features and manifest")
 
