@@ -53,7 +53,6 @@ def ensure_noise_data(download_dir):
     if not os.path.exists(os.path.join(download_dir, 'musan')):
         download_and_extract_musan(download_dir)
 
-
 def ensure_rir_data(download_dir):
     if not os.path.exists(os.path.join(download_dir, 'RIRS_NOISES')):
         download_and_extract_rirs(download_dir)
@@ -77,26 +76,49 @@ def add_reverb(wav, rir):
 
 ############################
 
-def augment_file(filepath, out_dir):
+
+def add_white_noise(wav, snr_db):
+    noise = np.random.randn(len(wav))
+    sig_pow = np.mean(wav**2)
+    noise_pow = np.mean(noise**2)
+    noise = noise * np.sqrt(sig_pow / (10**(snr_db/10) * noise_pow))
+    return wav + noise
+
+def augment_file(filepath, out_dir, clip: float = None):
     wav, sr = load_audio(filepath)
     base = os.path.splitext(os.path.basename(filepath))[0]
 
+    # 0. Cut first 2 seconds (almost every time the is few secs of silence)
+    cutoff = int(2 * sr)
+    if len(wav) > cutoff:
+        wav = wav[cutoff:]
+
     # 1. Original
-    save_audio(os.path.join(out_dir, f"{base}.wav"), wav, sr)
+    save_audio(os.path.join(out_dir, f"{base}.wav"), wav, sr, clip=clip)
 
     # 2. Speed perturbation
     for rate in [0.9, 1.1]:
         wav_sp = librosa.effects.time_stretch(wav, rate=rate)
-        save_audio(os.path.join(out_dir, f"{base}_sp{rate:.1f}.wav"), wav_sp, sr)
+        save_audio(os.path.join(out_dir, f"{base}_sp{rate:.1f}.wav"), wav_sp, sr, clip=clip)
 
     # 3. Pitch shift
     for steps in [-1, 1]:
         wav_ps = librosa.effects.pitch_shift(wav, sr=sr, n_steps=steps)
-        save_audio(os.path.join(out_dir, f"{base}_ps{steps:+d}.wav"), wav_ps, sr)
+        save_audio(os.path.join(out_dir, f"{base}_ps{steps:+d}.wav"), wav_ps, sr, clip=clip)
+    
+    # 4. Additive white noise
+    for snr in [15, 20]:
+        wav_no = add_white_noise(wav, snr)
+        save_audio(os.path.join(out_dir, f"{base}_noise{snr}dB.wav"), wav_no, sr, clip=clip)
+
+    # 5. Random gain
+    for gain_db in [-5, 5]:
+        wav_gain = wav * (10**(gain_db / 20))
+        save_audio(os.path.join(out_dir, f"{base}_gain{gain_db:.1f}dB.wav"), wav_gain, sr, clip=clip)
 
     # These steps were skipped due to need for external data
 
-    # # 4. Additive noise
+    # # 6. Additive noise
     # if noise_files:
     #     for snr in [5, 10, 15]:
     #         noise, _ = load_audio(random.choice(noise_files))
@@ -105,7 +127,7 @@ def augment_file(filepath, out_dir):
     # else:
     #     pass
 
-    # # 5. Reverberation
+    # # 7. Reverberation
     # if rir_files:
     #     rir_f = random.choice(rir_files)
     #     rir, _ = load_audio(rir_f)
@@ -114,7 +136,7 @@ def augment_file(filepath, out_dir):
     # else:
     #     pass
 
-def process_folder(input_dir, output_dir, download_dir):
+def process_folder(input_dir, output_dir, download_dir, clip: float = None):
     # # Ensure noise and RIR data are available
     # ensure_noise_data(download_dir)
     # ensure_rir_data(download_dir)
@@ -150,16 +172,17 @@ def process_folder(input_dir, output_dir, download_dir):
             os.makedirs(spk_out, exist_ok=True)
 
             for wav_path in glob.glob(os.path.join(spk_in, "*.wav")):
-                augment_file(wav_path, spk_out)
+                augment_file(wav_path, spk_out, clip=clip)
 
 def main():
     parser = argparse.ArgumentParser(description="Data augmentation")
     parser.add_argument("-i", "--input",    required=True,  help="Path to original data directory")
     parser.add_argument("-o", "--output",   required=True,  help="Path to augmented data directory")
     parser.add_argument("-d", "--download", default="data", help="Path to download directory for noise and RIR data (not used)")
+    parser.add_argument("--clip", type=float, default=None, help="Clip length in seconds (default: no clipping)")
     args = parser.parse_args()
 
-    process_folder(args.input, args.output, args.download)
+    process_folder(args.input, args.output, args.download, clip=args.clip)
 
 if __name__ == '__main__':
     main()
