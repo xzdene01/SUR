@@ -1,11 +1,14 @@
-import csv
+# Heavy inspiration taken from:
+#   Towards Speaker Identification with Minimal Dataset and Constrained Resources using 1D-Convolution Neural Network
+#   (https://arxiv.org/pdf/2411.15082)
+
 import torch
 import argparse
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from utils import load_manifest
 
@@ -69,7 +72,7 @@ class ResidualBlock(nn.Module):
         return out
 
 class SpeakerResNet(nn.Module):
-    def __init__(self, input_length, num_classes):
+    def __init__(self, input_length, num_classes=31):
         super().__init__()
         # Input channel = 1
         self.layer1 = ResidualBlock(1, 16)
@@ -88,15 +91,15 @@ class SpeakerResNet(nn.Module):
 
         self.fc1 = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(flat_dim, 32),
+            nn.Linear(flat_dim, 256),
             nn.ReLU(),
-            nn.Dropout(0.2)
+            nn.Dropout(0.5)
         )
         self.fc2 = nn.Sequential(
-            nn.Linear(32, 16),
+            nn.Linear(256, 128),
             nn.ReLU()
         )
-        self.fc3 = nn.Linear(16, num_classes)
+        self.fc3 = nn.Linear(128, num_classes)
 
     def forward(self, x):
         # x: (B, 1, L)
@@ -144,17 +147,8 @@ def eval_loop(model, loader, criterion, device):
     return running_loss / total, correct / total
 
 def main(args):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    # Build speaker index mapping from train manifest
-    speakers = []
-    with open(args.train_manifest, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row['speaker'] not in speakers:
-                speakers.append(row['speaker'])
-    speaker2idx = {s:i for i,s in enumerate(sorted(speakers))}
 
     # Datasets and loaders
     train_ds = FeatureDataset(args.train_manifest)
@@ -162,13 +156,14 @@ def main(args):
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     dev_loader = DataLoader(dev_ds, batch_size=args.batch_size, shuffle=False)
 
+    # Model and training setup
     sample_feats, _ = train_ds[0]
     input_dim = sample_feats.shape[-1]
-    model = SpeakerResNet(input_dim, len(speaker2idx))
+    model = SpeakerResNet(input_dim)
     model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3, min_lr=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5, min_lr=1e-6)
 
     # Training
     best_acc = 0.0
@@ -176,20 +171,24 @@ def main(args):
         train_loss, train_acc = train_loop(model, train_loader, criterion, optimizer, device)
         dev_loss, dev_acc = eval_loop(model, dev_loader, criterion, device)
         scheduler.step(dev_loss)
+
         print(f"Epoch {epoch:02d}: Train loss {train_loss:.4f}, acc {train_acc:.4f} | "
-              f"Dev loss {dev_loss:.4f}, acc {dev_acc:.4f} | lr: {optimizer.param_groups[0]["lr"]:.2e}")
+              f"Dev loss {dev_loss:.4f}, acc {dev_acc:.4f} | lr: {optimizer.param_groups[0]["lr"]:.0e}")
         if dev_acc > best_acc:
             best_acc = dev_acc
-            torch.save(model.state_dict(), args.save_path)
+            if args.save_path is not None:
+                torch.save(model.state_dict(), args.save_path)
     print(f"Best dev acc: {best_acc:.4f}")
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="1D-CNN SID")
-    parser.add_argument('--train-manifest', required=True)
-    parser.add_argument('--dev-manifest', required=True)
-    parser.add_argument('--batch-size', type=int, default=8)
-    parser.add_argument('--epochs', type=int, default=70)
-    parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--save-path', type=str, default='trash/best_model.pt')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="1D-CNN SID Training")
+    parser.add_argument("--train-manifest", required=True)
+    parser.add_argument("--dev-manifest",   required=True)
+
+    parser.add_argument("--batch-size",     type=int,   default=8)
+    parser.add_argument("--epochs",         type=int,   default=50)
+    parser.add_argument("--lr",             type=float, default=1e-4)
+    parser.add_argument("--save-path",      type=str,   default=None)
     args = parser.parse_args()
+
     main(args)

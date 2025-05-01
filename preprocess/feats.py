@@ -67,7 +67,7 @@ def apply_cmvn(feats):
 def process_file(wav_path, input_root, output_root, n_mfcc=None, n_fbanks=None, n_fft=None):
     speaker = os.path.basename(os.path.dirname(wav_path))
     fname = os.path.splitext(os.path.basename(wav_path))[0]
-    utt_id = f"{speaker}_{fname}"
+    utt_id = fname
 
     y, sr = librosa.load(wav_path, sr=16000)
     if n_mfcc:

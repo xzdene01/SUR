@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
-from sklearn.metrics import classification_report, confusion_matrix, roc_curve
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, det_curve
 
 from utils import load_manifest
 
@@ -43,7 +43,7 @@ def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
             score_list = [scores[str(lbl)] for lbl in range(1, 32)]
             Z = logsumexp(np.array(score_list))
             log_probabs = score_list - Z
-            row = [feat_path, pred] + log_probabs.tolist()
+            row = [os.path.basename(feat_path)[:-4], pred] + log_probabs.tolist()
             results = pd.concat([results, pd.DataFrame([row], columns=["file", "pred"] + [i for i in range(1, 32)])], ignore_index=True)
 
         y_true.append(str(true_label))
@@ -56,10 +56,11 @@ def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
     labels = list(gmms.keys())
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     fpr, tpr, _ = roc_curve(trial_labels, trial_scores)
+    det_fpr, det_fnr, _ = det_curve(trial_labels, trial_scores)
     eer = fpr[np.nanargmin(np.abs((1 - tpr) - fpr))]
-    return report, cm, eer, (fpr, tpr)
+    return report, cm, eer, (fpr, tpr), (det_fpr, det_fnr)
 
-def save_results(report, cm, eer, roc, output_dir):
+def save_results(report, cm, eer, roc, det, output_dir):
     os.makedirs(output_dir, exist_ok=True)
 
     # metrics JSON
@@ -89,26 +90,33 @@ def save_results(report, cm, eer, roc, output_dir):
     ax.set_xlabel("False Positive Rate")
     ax.set_ylabel("True Positive Rate")
     ax.legend()
-
     plt.savefig(os.path.join(output_dir, "roc_curve.png"))
+
+    # DET curve
+    det_fpr, det_fnr = det
+    fig, ax = plt.subplots()
+    ax.plot(det_fpr, det_fnr)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("False Negative Rate")
+    plt.savefig(os.path.join(output_dir, "det_curve.png"))
 
 def run_evaluation(model_dir, test_manifest, output_root, do_minmax=False, create_csv=False):
     global results
     ubm, gmms = load_models(model_dir)
     data = load_manifest(test_manifest)
 
-    report, cm, eer, roc = evaluate_metrics(data, gmms, ubm, do_minmax, create_csv)
+    report, cm, eer, roc, det = evaluate_metrics(data, gmms, ubm, do_minmax, create_csv)
 
     ts = time.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(output_root, ts)
-    save_results(report, cm, eer, roc, out_dir)
+    save_results(report, cm, eer, roc, det, out_dir)
     print(f"Results saved in {out_dir}: Acc={report['accuracy']:.3f}, EER={eer:.3f}")
 
     if create_csv:
         results.to_csv(os.path.join("audio_gmm_ubm.csv"), index=False, sep=" ", header=False)
         print(f"Results saved in audio_gmm_ubm.csv")
 
-    return report, cm, eer, roc
+    return report, cm, eer, roc, det
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate GMM model on SID test set")

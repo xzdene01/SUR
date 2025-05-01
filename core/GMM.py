@@ -96,8 +96,8 @@ def train(train_manifest, dev_manifest, output_dir, n_components, covariance_typ
 
     # Evaluate and save results on dev data
     dev_data = load_manifest(dev_manifest)
-    report, cm, eer, roc = evaluate_metrics(dev_data, gmms, ubm, do_minmax=minmax_norm)
-    save_results(report, cm, eer, roc, out_dir)
+    report, cm, eer, roc, det = evaluate_metrics(dev_data, gmms, ubm, do_minmax=minmax_norm)
+    save_results(report, cm, eer, roc, det, out_dir)
     print(f"Results saved in {out_dir}: Acc={report["accuracy"]:.3f}, EER={eer:.3f}")
 
 if __name__ == "__main__":
