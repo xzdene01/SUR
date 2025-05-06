@@ -10,37 +10,38 @@ from sklearn.metrics import accuracy_score
 def load_scores(path):
     # Load space-delimited file: id, hard_pred, 31 log-probs
     df = pd.read_csv(path, sep=r"\s+", header=None)
-    # name columns
     cols = ["id", "pred"] + [f"c{i+1}" for i in range(df.shape[1]-2)]
     df.columns = cols
     return df
 
-
-def normalize_cols(arr):
-    # Min-max normalize each column
-    scaler = MinMaxScaler()
-    return scaler.fit_transform(arr)
-
+def normalize_cols_variance(arr):
+    # input shape: (n_samples, n_features)
+    # output shape: (n_samples, n_features)
+    # Normalize each column to have zero mean and unit variance
+    arr = arr.astype(np.float32)
+    mean = np.mean(arr, axis=0)
+    std = np.std(arr, axis=0)
+    std[std == 0] = 1e-8  # Avoid division by zero
+    arr = (arr - mean) / std
+    return arr
 
 def main(audio_file, image_file, test_dir, output_file):
-    # Load data
     df_a = load_scores(audio_file)
     df_i = load_scores(image_file)
 
     # Merge on id
     df = pd.merge(df_a[["id"]], df_a, on="id").merge(df_i[["id"]], on="id")
-    # Extract score arrays
     scores_a = df[[f"c{i+1}" for i in range(31)]].values
     scores_i = df_i.set_index("id").loc[df["id"], [f"c{i+1}" for i in range(31)]].values
 
     # Normalize each column
-    norm_a = normalize_cols(scores_a)
-    norm_i = normalize_cols(scores_i)
+    norm_a = normalize_cols_variance(scores_a)
+    norm_i = normalize_cols_variance(scores_i)
 
     # Fuse scores
     fused = norm_a + norm_i
 
-    # New hard predictions (1-based class indices)
+    # New hard predictions
     preds = np.argmax(fused, axis=1) + 1
 
     # Recompute log-probs via log-softmax
@@ -54,6 +55,12 @@ def main(audio_file, image_file, test_dir, output_file):
 
     # Save fused scores
     out_df.to_csv(output_file, sep=" ", index=False, header=False)
+
+    if test_dir is None:
+        print("No test directory provided, skipping evaluation.", file=sys.stderr)
+        return
+    
+    # out_df = df_a
 
     # Build ground truth mapping from test_dir
     truth = {}

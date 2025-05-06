@@ -10,6 +10,7 @@ def extract_mfcc(y, sr,
                  n_mfcc=13,
                  n_fft=400,
                  hop_length=160):
+    # y = y[2 * sr:]
     mfcc = librosa.feature.mfcc(
         y=y, sr=sr,
         n_mfcc=n_mfcc,
@@ -99,7 +100,8 @@ def process_file(wav_path, input_root, output_root, n_mfcc=None, n_fbanks=None, 
 
 def process_folder(input_dir, output_dir, n_mfcc=None, n_fbanks=None, n_fft=None):
     os.makedirs(output_dir, exist_ok=True)
-    for subset in ['train', 'dev']:
+    # for subset in [!train", "dev"]:
+    for subset in ["eval"]:
         in_dir = os.path.join(input_dir, subset)
         if not os.path.isdir(in_dir):
             print(f"Input directory {in_dir} does not exist.")

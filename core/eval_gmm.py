@@ -54,11 +54,15 @@ def evaluate_metrics(data_list, gmms, ubm, do_minmax=False, create_csv=False):
 
     report = classification_report(y_true, y_pred, output_dict=True)
     labels = list(gmms.keys())
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
-    fpr, tpr, _ = roc_curve(trial_labels, trial_scores)
-    det_fpr, det_fnr, _ = det_curve(trial_labels, trial_scores)
-    eer = fpr[np.nanargmin(np.abs((1 - tpr) - fpr))]
-    return report, cm, eer, (fpr, tpr), (det_fpr, det_fnr)
+    try:
+        cm = confusion_matrix(y_true, y_pred, labels=labels)
+        fpr, tpr, _ = roc_curve(trial_labels, trial_scores)
+        det_fpr, det_fnr, _ = det_curve(trial_labels, trial_scores)
+        eer = fpr[np.nanargmin(np.abs((1 - tpr) - fpr))]
+        return report, cm, eer, (fpr, tpr), (det_fpr, det_fnr)
+    except ValueError as e:
+        print(f"Error in evaluation: {e}")
+        return report, None, None, None, None
 
 def save_results(report, cm, eer, roc, det, output_dir):
     os.makedirs(output_dir, exist_ok=True)
@@ -109,11 +113,14 @@ def run_evaluation(model_dir, test_manifest, output_root, do_minmax=False, creat
 
     ts = time.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(output_root, ts)
-    save_results(report, cm, eer, roc, det, out_dir)
-    print(f"Results saved in {out_dir}: Acc={report['accuracy']:.3f}, EER={eer:.3f}")
+    try:
+        save_results(report, cm, eer, roc, det, out_dir)
+        print(f"Results saved in {out_dir}: Acc={report['accuracy']:.3f}, EER={eer:.3f}")
+    except Exception as e:
+        print(f"Error saving results: {e}")
 
     if create_csv:
-        results.to_csv(os.path.join("audio_gmm_ubm.csv"), index=False, sep=" ", header=False)
+        results.to_csv(os.path.join(create_csv), index=False, sep=" ", header=False)
         print(f"Results saved in audio_gmm_ubm.csv")
 
     return report, cm, eer, roc, det
@@ -124,7 +131,7 @@ def main():
     parser.add_argument("--test-manifest",  required=True)
     parser.add_argument("--output-dir",     required=True)
     parser.add_argument("--minmax-norm",    action="store_true")
-    parser.add_argument("--create-csv",     action="store_true")
+    parser.add_argument("--create-csv",     type=str, default=None)
     args = parser.parse_args()
 
     run_evaluation(

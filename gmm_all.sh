@@ -2,8 +2,6 @@
 
 n_mfcc=(20 30 40)
 n_fbank=(26 40)
-# n_mfcc=(30 30 30 30 30)
-
 
 for mfcc in "${n_mfcc[@]}"; do
     echo "MFCC: $mfcc"
@@ -15,7 +13,7 @@ for mfcc in "${n_mfcc[@]}"; do
     python3 core/GMM.py \
         --train-manifest "$train_manifest" \
         --dev-manifest "$dev_manifest" \
-        --output-dir "$output_dir" -m --minmax-norm
+        --output-dir "$output_dir" -m --minmax-norm --seed 0
 done
 
 for fbank in "${n_fbank[@]}"; do
@@ -28,5 +26,5 @@ for fbank in "${n_fbank[@]}"; do
     python3 core/GMM.py \
         --train-manifest "$train_manifest" \
         --dev-manifest "$dev_manifest" \
-        --output-dir "$output_dir" -m --minmax-norm --seed 0
+        --output-dir "$output_dir" -m --minmax-norm
 done
